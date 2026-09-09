@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#0b0714" />
+    <meta name="theme-color" content="#090018" />
     <meta name="description" content="Winkee — Mesajlaş, Oyna, Eğlen." />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -11,5 +11,44 @@
     <link rel="stylesheet" href="/src/overrides.css" />
     <title>Winkee — Mesajlaş, Oyna, Eğlen</title>
   </head>
-  <body><div id="root"></div><script type="module" src="/src/main.jsx"></script></body>
+  <body>
+    <div id="winkee-welcome" class="winkee-welcome" aria-label="Winkee başlangıç ekranı">
+      <div class="welcome-sparkles" aria-hidden="true"><i>✦</i><i>♫</i><i>★</i><i>✦</i><i>♥</i><i>✧</i></div>
+      <div class="welcome-mascot" aria-hidden="true">
+        <div class="headphones left"></div><div class="headphones right"></div>
+        <div class="face">
+          <span class="brow left"></span><span class="brow right"></span>
+          <span class="eye open"></span><span class="eye wink"></span>
+          <span class="mouth"><i></i></span>
+          <span class="blush left"></span><span class="blush right"></span>
+        </div>
+      </div>
+      <div class="welcome-brand">Winkee</div>
+      <div class="welcome-tagline">Mesajlaş, Oyna, Eğlen</div>
+      <button class="welcome-primary" data-winkee-enter>Hemen Başla</button>
+      <button class="welcome-secondary" data-winkee-enter>Giriş Yap</button>
+      <div class="welcome-shortcuts">
+        <button data-winkee-enter><b>💬</b><span>Sohbet</span></button>
+        <button data-winkee-enter><b>🎮</b><span>Oyunlar</span></button>
+        <button data-winkee-enter><b>👥</b><span>Arkadaşlar</span></button>
+      </div>
+      <div class="welcome-dots" aria-hidden="true"><b></b><i></i><i></i><i></i></div>
+    </div>
+    <div id="root"></div>
+    <script>
+      (function () {
+        var welcome = document.getElementById('winkee-welcome');
+        function enter() {
+          welcome.classList.add('is-hidden');
+          try { sessionStorage.setItem('winkee-welcome-seen', '1'); } catch (e) {}
+          window.setTimeout(function () { welcome.remove(); }, 520);
+        }
+        document.querySelectorAll('[data-winkee-enter]').forEach(function (el) { el.addEventListener('click', enter); });
+        try {
+          if (sessionStorage.getItem('winkee-welcome-seen') === '1') welcome.remove();
+        } catch (e) {}
+      })();
+    </script>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
 </html>
