@@ -1,3 +1,5 @@
+import { supabase, supabaseConfigured } from './lib/supabase';
+
 const css=`
 html,body,#root{width:100%;min-height:100%;}
 .app,.mobile-shell{min-height:100dvh;height:100dvh;}
@@ -11,6 +13,7 @@ html,body,#root{width:100%;min-height:100%;}
 .composer{flex:0 0 54px;min-height:54px;margin:3px 12px 8px;}
 .composer-tools,.emoji-convert,.composer{position:relative;z-index:20;}
 .composer input{min-width:0;}
+.composer .send{pointer-events:auto!important;opacity:1!important;cursor:pointer!important;position:relative;z-index:30;}
 .bottom-nav{height:76px;padding:7px 12px max(7px,env(safe-area-inset-bottom));z-index:100;}
 @media (max-width:600px){
   .conversation{height:100dvh!important;margin:0!important;padding:0 0 calc(76px + env(safe-area-inset-bottom))!important;}
@@ -68,14 +71,14 @@ async function sendDirect(){
   const input=document.querySelector('.conversation .composer input');
   const body=input?.value?.trim();
   if(!body)return false;
-  const {data:{user}}=await supabase.auth.getUser();
-  if(!user)return false;
-  const conversationId=await findCurrentConversation(user.id);
-  if(!conversationId){console.error('Winkee: active conversation could not be resolved');return false;}
-  const {error}=await supabase.from('messages').insert({conversation_id:conversationId,sender_id:user.id,body,message_type:'text'});
+  const {data:{user},error:userError}=await supabase.auth.getUser();
+  if(userError||!user)return false;
+  const recipient=document.querySelector('.conversation .chat-title strong')?.textContent?.trim();
+  if(!recipient)return false;
+  const {data,error}=await supabase.rpc('winkee_send_message_to_user',{p_recipient:recipient,p_body:body});
   if(error){console.error('Winkee send message',error);return false;}
   reactInputValue(input,'');
-  addSentBubble(body);
+  addSentBubble(data?.body||body);
   return true;
 }
 
