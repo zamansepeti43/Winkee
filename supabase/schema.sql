@@ -1,82 +1,37 @@
--- Winkee realtime chat + social/game foundation
+-- Winkee backend: auth/profile, persistent chat, friends, games, social feed and notifications
 create extension if not exists pgcrypto;
 
-create table if not exists public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  username text unique not null,
-  display_name text not null default 'Winkee Kullanıcısı',
-  avatar_url text,
-  xp integer not null default 0,
-  coins integer not null default 0,
-  level integer not null default 1,
-  created_at timestamptz not null default now()
-);
+create table if not exists public.profiles(id uuid primary key references auth.users(id) on delete cascade,username text unique not null,display_name text not null default 'Winkee Kullanıcısı',avatar_url text,xp integer not null default 0,coins integer not null default 100,level integer not null default 1,bio text default '',created_at timestamptz not null default now());
+create table if not exists public.conversations(id uuid primary key default gen_random_uuid(),name text,is_group boolean not null default false,created_by uuid references auth.users(id) on delete set null,created_at timestamptz not null default now());
+create table if not exists public.conversation_members(conversation_id uuid references public.conversations(id) on delete cascade,user_id uuid references auth.users(id) on delete cascade,joined_at timestamptz not null default now(),primary key(conversation_id,user_id));
+create table if not exists public.messages(id uuid primary key default gen_random_uuid(),conversation_id uuid not null references public.conversations(id) on delete cascade,sender_id uuid not null references auth.users(id) on delete cascade,body text,message_type text not null default 'text' check(message_type in('text','emoji_game','image','video','game','voice')),metadata jsonb not null default '{}'::jsonb,created_at timestamptz not null default now());
+create index if not exists messages_conversation_created_idx on public.messages(conversation_id,created_at desc);
+create table if not exists public.friendships(id uuid primary key default gen_random_uuid(),requester_id uuid not null references auth.users(id) on delete cascade,addressee_id uuid not null references auth.users(id) on delete cascade,status text not null default 'pending' check(status in('pending','accepted','blocked')),created_at timestamptz not null default now(),unique(requester_id,addressee_id));
+create table if not exists public.games(id uuid primary key default gen_random_uuid(),slug text unique not null,title text not null,category text not null,config jsonb not null default '{}'::jsonb,created_at timestamptz not null default now());
+create table if not exists public.game_rooms(id uuid primary key default gen_random_uuid(),game_id uuid references public.games(id) on delete cascade,host_id uuid references auth.users(id) on delete set null,room_code text unique not null,state jsonb not null default '{}'::jsonb,status text not null default 'waiting' check(status in('waiting','playing','finished')),created_at timestamptz not null default now());
+create table if not exists public.game_room_players(room_id uuid references public.game_rooms(id) on delete cascade,user_id uuid references auth.users(id) on delete cascade,score integer not null default 0,joined_at timestamptz not null default now(),primary key(room_id,user_id));
+create table if not exists public.game_answers(id uuid primary key default gen_random_uuid(),room_id uuid references public.game_rooms(id) on delete cascade,user_id uuid references auth.users(id) on delete cascade,question_index integer not null,answer text,correct boolean not null default false,points integer not null default 0,created_at timestamptz not null default now());
+create table if not exists public.game_scores(id uuid primary key default gen_random_uuid(),room_id uuid references public.game_rooms(id) on delete cascade,user_id uuid references auth.users(id) on delete cascade,score integer not null default 0,finished_at timestamptz not null default now());
+create table if not exists public.posts(id uuid primary key default gen_random_uuid(),user_id uuid not null references auth.users(id) on delete cascade,body text not null,media_url text,metadata jsonb not null default '{}'::jsonb,created_at timestamptz not null default now());
+create table if not exists public.post_likes(post_id uuid references public.posts(id) on delete cascade,user_id uuid references auth.users(id) on delete cascade,created_at timestamptz not null default now(),primary key(post_id,user_id));
+create table if not exists public.post_comments(id uuid primary key default gen_random_uuid(),post_id uuid references public.posts(id) on delete cascade,user_id uuid references auth.users(id) on delete cascade,body text not null,created_at timestamptz not null default now());
+create table if not exists public.notifications(id uuid primary key default gen_random_uuid(),user_id uuid not null references auth.users(id) on delete cascade,type text not null,payload jsonb not null default '{}'::jsonb,read_at timestamptz,created_at timestamptz not null default now());
+create table if not exists public.daily_progress(user_id uuid primary key references auth.users(id) on delete cascade,day date not null default current_date,games_played integer not null default 0,xp_earned integer not null default 0,updated_at timestamptz not null default now());
 
-create table if not exists public.conversations (
-  id uuid primary key default gen_random_uuid(),
-  name text,
-  is_group boolean not null default false,
-  created_by uuid references auth.users(id) on delete set null,
-  created_at timestamptz not null default now()
-);
+create or replace function public.handle_new_user() returns trigger language plpgsql security definer set search_path=public as $$begin insert into public.profiles(id,username,display_name) values(new.id,coalesce(nullif(new.raw_user_meta_data->>'username',''),split_part(new.email,'@',1)||substr(replace(new.id::text,'-',''),1,6)),coalesce(nullif(new.raw_user_meta_data->>'display_name',''),'Winkee Kullanıcısı')) on conflict(id) do nothing; return new;end;$$;
+drop trigger if exists on_auth_user_created on auth.users;create trigger on_auth_user_created after insert on auth.users for each row execute procedure public.handle_new_user();
 
-create table if not exists public.conversation_members (
-  conversation_id uuid references public.conversations(id) on delete cascade,
-  user_id uuid references auth.users(id) on delete cascade,
-  joined_at timestamptz not null default now(),
-  primary key (conversation_id, user_id)
-);
+alter table public.profiles enable row level security;alter table public.conversations enable row level security;alter table public.conversation_members enable row level security;alter table public.messages enable row level security;alter table public.friendships enable row level security;alter table public.games enable row level security;alter table public.game_rooms enable row level security;alter table public.game_room_players enable row level security;alter table public.game_answers enable row level security;alter table public.game_scores enable row level security;alter table public.posts enable row level security;alter table public.post_likes enable row level security;alter table public.post_comments enable row level security;alter table public.notifications enable row level security;alter table public.daily_progress enable row level security;
 
-create table if not exists public.messages (
-  id uuid primary key default gen_random_uuid(),
-  conversation_id uuid not null references public.conversations(id) on delete cascade,
-  sender_id uuid not null references auth.users(id) on delete cascade,
-  body text,
-  message_type text not null default 'text' check (message_type in ('text','emoji_game','image','video','game')),
-  metadata jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now()
-);
+drop policy if exists "profiles are readable" on public.profiles;create policy "profiles are readable" on public.profiles for select using(true);drop policy if exists "users manage own profile" on public.profiles;create policy "users manage own profile" on public.profiles for all using(auth.uid()=id) with check(auth.uid()=id);
+create policy "members read conversations" on public.conversations for select using(exists(select 1 from public.conversation_members m where m.conversation_id=id and m.user_id=auth.uid()));create policy "members create conversations" on public.conversations for insert with check(created_by=auth.uid());
+create policy "members see membership" on public.conversation_members for select using(user_id=auth.uid() or exists(select 1 from public.conversation_members m where m.conversation_id=conversation_members.conversation_id and m.user_id=auth.uid()));
+create policy "members read messages" on public.messages for select using(exists(select 1 from public.conversation_members m where m.conversation_id=messages.conversation_id and m.user_id=auth.uid()));create policy "members send messages" on public.messages for insert with check(sender_id=auth.uid() and exists(select 1 from public.conversation_members m where m.conversation_id=messages.conversation_id and m.user_id=auth.uid()));
+create policy "friend access" on public.friendships for all using(requester_id=auth.uid() or addressee_id=auth.uid()) with check(requester_id=auth.uid());
+create policy "games readable" on public.games for select using(true);create policy "room access" on public.game_rooms for select using(host_id=auth.uid() or exists(select 1 from public.game_room_players p where p.room_id=id and p.user_id=auth.uid()));create policy "room create" on public.game_rooms for insert with check(host_id=auth.uid());create policy "players access" on public.game_room_players for all using(user_id=auth.uid() or exists(select 1 from public.game_room_players p where p.room_id=room_id and p.user_id=auth.uid())) with check(user_id=auth.uid());create policy "answers own" on public.game_answers for all using(user_id=auth.uid()) with check(user_id=auth.uid());create policy "scores readable" on public.game_scores for select using(true);
+create policy "posts readable" on public.posts for select using(true);create policy "posts own" on public.posts for insert with check(user_id=auth.uid());create policy "posts update own" on public.posts for update using(user_id=auth.uid());create policy "likes access" on public.post_likes for all using(user_id=auth.uid()) with check(user_id=auth.uid());create policy "comments readable" on public.post_comments for select using(true);create policy "comments own" on public.post_comments for insert with check(user_id=auth.uid());
+create policy "notifications own" on public.notifications for all using(user_id=auth.uid()) with check(user_id=auth.uid());create policy "daily own" on public.daily_progress for all using(user_id=auth.uid()) with check(user_id=auth.uid());
 
-create index if not exists messages_conversation_created_idx on public.messages(conversation_id, created_at desc);
+insert into public.games(slug,title,category,config) values('emoji-tahmin','Emoji Tahmin','emoji','{"timer":30}'),('sarki-tahmin','Şarkı Tahmin','music','{"timer":30}'),('film-dizi','Film & Dizi','movie','{"timer":30}'),('deyim-atasozu','Deyim & Atasözü','turkish','{"timer":30}'),('this-or-that','This or That','choice','{"timer":15}'),('hizli-quiz','Hızlı Quiz','quiz','{"timer":20}') on conflict(slug) do nothing;
 
-create table if not exists public.games (
-  id uuid primary key default gen_random_uuid(),
-  slug text unique not null,
-  title text not null,
-  category text not null,
-  config jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists public.game_rooms (
-  id uuid primary key default gen_random_uuid(),
-  game_id uuid references public.games(id) on delete cascade,
-  host_id uuid references auth.users(id) on delete set null,
-  room_code text unique not null,
-  state jsonb not null default '{}'::jsonb,
-  status text not null default 'waiting' check (status in ('waiting','playing','finished')),
-  created_at timestamptz not null default now()
-);
-
-create table if not exists public.game_scores (
-  id uuid primary key default gen_random_uuid(),
-  room_id uuid references public.game_rooms(id) on delete cascade,
-  user_id uuid references auth.users(id) on delete cascade,
-  score integer not null default 0,
-  finished_at timestamptz not null default now()
-);
-
-alter table public.profiles enable row level security;
-alter table public.conversations enable row level security;
-alter table public.conversation_members enable row level security;
-alter table public.messages enable row level security;
-alter table public.game_rooms enable row level security;
-alter table public.game_scores enable row level security;
-
-create policy "profiles are readable" on public.profiles for select using (true);
-create policy "users manage own profile" on public.profiles for all using (auth.uid() = id) with check (auth.uid() = id);
-create policy "members read conversations" on public.conversations for select using (exists (select 1 from public.conversation_members m where m.conversation_id = id and m.user_id = auth.uid()));
-create policy "members read messages" on public.messages for select using (exists (select 1 from public.conversation_members m where m.conversation_id = messages.conversation_id and m.user_id = auth.uid()));
-create policy "members send messages" on public.messages for insert with check (sender_id = auth.uid() and exists (select 1 from public.conversation_members m where m.conversation_id = messages.conversation_id and m.user_id = auth.uid()));
-
-alter publication supabase_realtime add table public.messages;
+alter publication supabase_realtime add table public.messages;alter publication supabase_realtime add table public.game_room_players;alter publication supabase_realtime add table public.notifications;
