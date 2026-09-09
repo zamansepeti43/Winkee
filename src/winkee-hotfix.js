@@ -90,9 +90,86 @@ async function hydrateProfile(){
   const phone=modal.querySelector('.wk-profile-phone'); if(phone)setReactInput(phone,p.phone||'');
 }
 
+function injectMobileChatLayout(){
+  if(document.getElementById('wk-mobile-chat-fix')) return;
+  const style=document.createElement('style');
+  style.id='wk-mobile-chat-fix';
+  style.textContent=`
+    html,body,#root{height:100%;min-height:100%;}
+    body{overflow:hidden;}
+    .app{height:100dvh;min-height:100dvh;overflow:hidden;}
+    .mobile-shell{height:100dvh;min-height:100dvh;overflow:hidden;}
+    .conversation{height:calc(100dvh - 76px)!important;min-height:0!important;margin-bottom:76px!important;overflow:hidden;}
+    .conversation .chat-header{flex:0 0 64px;height:64px;min-height:64px;}
+    .conversation .messages{flex:1 1 auto;min-height:0;overflow-y:auto;padding:12px 14px 8px;}
+    .conversation .composer-tools{flex:0 0 auto;padding:5px 12px 6px;min-height:42px;}
+    .conversation .composer{flex:0 0 auto;margin:2px 12px 8px;min-height:50px;max-height:58px;}
+    .conversation .composer input{height:42px;}
+    .conversation .bottom-nav{display:none;}
+    .bottom-nav{height:76px;bottom:0;}
+    .wk-chat-panel{background:#17101f;border:1px solid #ffffff12;border-radius:18px;margin:0 12px 6px;padding:9px;display:flex;gap:7px;overflow-x:auto;box-shadow:0 12px 30px #0007;}
+    .wk-chat-panel button{flex:0 0 auto;background:#24182d;border:1px solid #ffffff0b;border-radius:12px;padding:8px 10px;color:#eee;font-size:18px;}
+    .wk-chat-panel button small{display:block;font-size:8px;color:#9b8da2;margin-top:2px;}
+    @media(min-width:700px){.conversation{height:100dvh!important;margin-bottom:0!important}.bottom-nav{display:flex!important}.conversation .bottom-nav{display:flex!important}}
+  `;
+  document.head.appendChild(style);
+}
+
+function composerInput(){return document.querySelector('.conversation .composer input');}
+function closePanels(){document.querySelectorAll('.wk-chat-panel').forEach(x=>x.remove());}
+function appendToComposer(value){
+  const input=composerInput(); if(!input)return;
+  const next=`${input.value||''}${value}`;
+  setReactInput(input,next);
+  input.focus();
+}
+
+function showEmojiPicker(){
+  closePanels();
+  const box=document.createElement('div'); box.className='wk-chat-panel wk-emoji-panel';
+  const list=['😀','😂','😍','🥳','😎','🤔','😭','🔥','❤️','👍','🎉','🎮','🎬','🎵','🍿','👀','✨','💜','💯','🙌','👏','🤩','😜','🫶','🚀','🎁','🏆','😇','😈','🤯','🥹','😉'];
+  list.forEach(e=>{const b=document.createElement('button');b.type='button';b.textContent=e;b.onclick=()=>appendToComposer(e);box.appendChild(b)});
+  const composer=document.querySelector('.conversation .composer'); composer?.before(box);
+}
+function showGifPicker(){
+  closePanels();
+  const box=document.createElement('div'); box.className='wk-chat-panel wk-gif-panel';
+  [['😂','Kahkaha'],['❤️','Aşk'],['🔥','Ateş'],['👏','Bravo'],['🥹','Duygusal'],['🎉','Kutlama'],['😎','Cool'],['🤯','Şok']].forEach(([e,t])=>{
+    const b=document.createElement('button');b.type='button';b.innerHTML=`${e}<small>${t}</small>`;b.onclick=()=>{appendToComposer(` ${e}`);closePanels()};box.appendChild(b);
+  });
+  const composer=document.querySelector('.conversation .composer'); composer?.before(box);
+}
+function showAttachmentPicker(){
+  const input=document.createElement('input'); input.type='file'; input.accept='image/*,video/*'; input.multiple=false; input.style.display='none';
+  input.onchange=()=>{const f=input.files?.[0];if(f){appendToComposer(` 📎 ${f.name}`);window.setTimeout(()=>input.remove(),0)}else input.remove()};
+  document.body.appendChild(input); input.click();
+}
+
+function hookComposerControls(){
+  document.addEventListener('click',e=>{
+    const conv=e.target.closest?.('.conversation'); if(!conv)return;
+    const btn=e.target.closest?.('.composer button'); if(!btn)return;
+    const buttons=[...conv.querySelectorAll('.composer button')]; const idx=buttons.indexOf(btn);
+    if(idx===0){e.preventDefault();e.stopImmediatePropagation();showAttachmentPicker();return;}
+    if(idx===2){e.preventDefault();e.stopImmediatePropagation();showEmojiPicker();return;}
+  },true);
+  document.addEventListener('click',e=>{
+    const b=e.target.closest?.('.composer-tools button'); if(!b)return;
+    const text=(b.textContent||'').trim();
+    if(text==='GIF'){
+      e.preventDefault();e.stopImmediatePropagation();showGifPicker();
+    }
+  },true);
+  document.addEventListener('click',e=>{
+    if(!e.target.closest('.wk-chat-panel')&&!e.target.closest('.composer button')&&!e.target.closest('.composer-tools button'))closePanels();
+  });
+}
+
 function start(){
+  injectMobileChatLayout();
   hookSearch();
-  const observer=new MutationObserver(()=>{clearTimeout(window.__wkHydrateTimer);window.__wkHydrateTimer=setTimeout(hydrateProfile,120)});
+  hookComposerControls();
+  const observer=new MutationObserver(()=>{clearTimeout(window.__wkHydrateTimer);window.__wkHydrateTimer=setTimeout(()=>{injectMobileChatLayout();hydrateProfile()},120)});
   observer.observe(document.body,{subtree:true,childList:true});
   hydrateProfile();
 }
