@@ -10,9 +10,7 @@ async function currentUser(){if(!supabaseConfigured)return null;const {data:{use
 async function registerPush(){
   if(!supabaseConfigured||!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window))return false;
   const reg=await navigator.serviceWorker.register('/sw.js');
-  let permission=Notification.permission;
-  if(permission==='default')return false;
-  if(permission!=='granted')return false;
+  if(Notification.permission!=='granted')return false;
   let sub=await reg.pushManager.getSubscription();
   if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlBase64ToUint8Array(VAPID_PUBLIC_KEY)});
   const u=await currentUser();if(!u)return false;
@@ -28,6 +26,16 @@ async function enablePush(){
 function showToast(text){const el=document.createElement('div');el.textContent=text;Object.assign(el.style,{position:'fixed',zIndex:10002,left:'50%',bottom:'24px',transform:'translateX(-50%)',background:'#21172a',color:'#fff',border:'1px solid #ffffff18',borderRadius:'14px',padding:'12px 16px',boxShadow:'0 10px 30px #0008',font:'600 12px Inter,system-ui,sans-serif'});document.body.appendChild(el);setTimeout(()=>el.remove(),2600);}
 function showPrompt(){if(document.querySelector('.wk-push')||Notification.permission==='granted'||Notification.permission==='denied')return;const el=document.createElement('div');el.className='wk-push';el.innerHTML='<span>🔔 Mesaj bildirimlerini aç</span><button>Bildirimleri aç</button><button class="x">×</button>';el.querySelector('button').onclick=enablePush;el.querySelector('.x').onclick=()=>el.remove();document.body.appendChild(el);}
 
+async function sendPushToRecipients(message){
+  if(!message?.id||message.sender_id!==(await currentUser())?.id)return;
+  const key='winkee-pushed-'+message.id;if(sessionStorage.getItem(key))return;sessionStorage.setItem(key,'1');
+  const {data:members,error}=await supabase.from('conversation_members').select('user_id').eq('conversation_id',message.conversation_id);
+  if(error)return;
+  const recipient_ids=(members||[]).map(x=>x.user_id).filter(Boolean).filter(id=>id!==message.sender_id);
+  if(!recipient_ids.length)return;
+  const {error:pushError}=await supabase.functions.invoke('winkee-push',{body:{recipient_ids,title:'Winkee 💜',body:message.body||'Yeni mesajın var.',url:`/?chat=${message.conversation_id}`}});
+  if(pushError)console.error('Winkee push send',pushError);
+}
 async function notifyNewMessage(n){
   if(!n||n.user_id!==(await currentUser())?.id)return;
   if(Notification.permission!=='granted')return;
@@ -39,8 +47,9 @@ async function start(){
   const u=await currentUser();if(!u)return;
   if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(console.error);
   if(Notification.permission==='granted')registerPush().catch(console.error);else setTimeout(showPrompt,1200);
-  const ch=supabase.channel('winkee-notifications-'+u.id).on('postgres_changes',{event:'INSERT',schema:'public',table:'winkee_notifications',filter:`user_id=eq.${u.id}`},payload=>notifyNewMessage(payload.new)).subscribe();
-  window.addEventListener('beforeunload',()=>supabase.removeChannel(ch));
+  const notifications=supabase.channel('winkee-notifications-'+u.id).on('postgres_changes',{event:'INSERT',schema:'public',table:'winkee_notifications',filter:`user_id=eq.${u.id}`},payload=>notifyNewMessage(payload.new)).subscribe();
+  const messages=supabase.channel('winkee-message-push-'+u.id).on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},payload=>sendPushToRecipients(payload.new)).subscribe();
+  window.addEventListener('beforeunload',()=>{supabase.removeChannel(notifications);supabase.removeChannel(messages)});
 }
 
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start);else start();
