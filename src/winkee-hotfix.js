@@ -99,7 +99,7 @@ function injectMobileChatLayout(){
     body{overflow:hidden;}
     .app{height:100dvh;min-height:100dvh;overflow:hidden;}
     .mobile-shell{height:100dvh;min-height:100dvh;overflow:hidden;}
-    .conversation{height:calc(100dvh - 76px)!important;min-height:0!important;margin-bottom:76px!important;overflow:hidden;}
+    .conversation{height:calc(100dvh - 76px)!important;min-height:0!important;margin-bottom:0!important;overflow:hidden;}
     .conversation .chat-header{flex:0 0 64px;height:64px;min-height:64px;}
     .conversation .messages{flex:1 1 auto;min-height:0;overflow-y:auto;padding:12px 14px 8px;}
     .conversation .composer-tools{flex:0 0 auto;padding:5px 12px 6px;min-height:42px;}
@@ -151,7 +151,8 @@ function hookComposerControls(){
     const btn=e.target.closest?.('.composer button'); if(!btn)return;
     const buttons=[...conv.querySelectorAll('.composer button')]; const idx=buttons.indexOf(btn);
     if(idx===0){e.preventDefault();e.stopImmediatePropagation();showAttachmentPicker();return;}
-    if(idx===2){e.preventDefault();e.stopImmediatePropagation();showEmojiPicker();return;}
+    if(btn.classList.contains('send')) return;
+    if(btn.querySelector('svg[data-lucide="smile"]')){e.preventDefault();e.stopImmediatePropagation();showEmojiPicker();return;}
   },true);
   document.addEventListener('click',e=>{
     const b=e.target.closest?.('.composer-tools button'); if(!b)return;
