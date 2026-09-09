@@ -1,0 +1,4 @@
+self.addEventListener('push',event=>{let data={};try{data=event.data?.json()||{}}catch{}const title=data.title||'Winkee 💜';const options={body:data.body||'Yeni mesajın var.',icon:'/favicon.ico',badge:'/favicon.ico',tag:'winkee-message',data:{url:data.url||'/'},vibrate:[120,60,120]};event.waitUntil(self.registration.showNotification(title,options));});
+self.addEventListener('notificationclick',event=>{event.notification.close();const url=new URL(event.notification.data?.url||'/',self.location.origin).href;event.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then(list=>{const same=list.find(c=>c.url.startsWith(self.location.origin));if(same){same.focus();same.postMessage({type:'winkee-open',url});return;}return clients.openWindow(url);}));});
+self.addEventListener('install',()=>self.skipWaiting());
+self.addEventListener('activate',event=>event.waitUntil(self.clients.claim()));
